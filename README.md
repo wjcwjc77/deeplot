@@ -6,6 +6,8 @@ Deeplot 是一个基于 Gradio 和 Matplotlib 的 Python 代码可视化工具�
 允许用户通过简单的 Web 界面编写和执行 Python 绘图代码，并立即查看可视化结果。
 该工具特别支持中文字体显示，适合中文环境下的数据可视化工作。
 
+[🔗在线试用](https://tool.ailln.com/)
+
 ## 功能特点
 
 - 🖥️ 简洁直观的 Web 界面
