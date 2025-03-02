@@ -1,10 +1,56 @@
-import gradio as gr
-import matplotlib.pyplot as plt
 import io
+import platform
+
 from PIL import Image
 import matplotlib as mpl
-import platform
-import os
+import gradio as gr
+import matplotlib.pyplot as plt
+
+
+EXAMPLES = [
+    ['''import matplotlib.pyplot as plt
+import numpy as np
+
+x = np.linspace(0, 10, 100)
+y = np.sin(x)
+
+plt.figure(figsize=(10, 6))
+plt.plot(x, y, 'b-', linewidth=2)
+plt.title('正弦波')
+plt.xlabel('x')
+plt.ylabel('sin(x)')
+plt.grid(True)'''],
+    ['''import matplotlib.pyplot as plt
+import numpy as np
+
+# 创建数据
+categories = ['A', 'B', 'C', 'D', 'E']
+values = [22, 35, 14, 28, 19]
+
+# 创建柱状图
+plt.figure(figsize=(10, 6))
+plt.bar(categories, values, color='skyblue')
+plt.title('简单柱状图')
+plt.xlabel('类别')
+plt.ylabel('数值')
+plt.grid(True, axis='y', linestyle='--', alpha=0.7)'''],
+    ['''import matplotlib.pyplot as plt
+import numpy as np
+
+# 创建数据
+labels = ['苹果', '香蕉', '橙子', '葡萄', '西瓜']
+sizes = [25, 20, 15, 30, 10]
+colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99', '#c2c2f0']
+explode = (0.1, 0, 0, 0, 0)  # 突出第一个切片
+
+# 创建饼图
+plt.figure(figsize=(10, 8))
+plt.pie(sizes, explode=explode, labels=labels, colors=colors,
+        autopct='%1.1f%%', shadow=True, startangle=90)
+plt.axis('equal')  # 确保饼图是圆的
+plt.title('水果比例')''']
+    ]
+
 
 # 配置中文字体支持
 def configure_chinese_font():
@@ -25,16 +71,9 @@ def configure_chinese_font():
     mpl.rcParams['font.sans-serif'] = chinese_fonts + original_font
     mpl.rcParams['axes.unicode_minus'] = False  # 正确显示负号
     
-
 # 应用中文字体配置
 configure_chinese_font()
 
-# 确保 data 目录存在
-def ensure_data_dir():
-    data_dir = "data"
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-    return data_dir
 
 def execute_python_code(code):
     # 创建一个内存中的图像缓冲区
@@ -80,15 +119,13 @@ if chinese_font:
         
         # 检查是否有图形对象
         if plt.get_fignums():
-
             # 保存图形到缓冲区
             plt.savefig(buf, format='png', dpi=300, bbox_inches='tight')
             buf.seek(0)
             
             # 转换为PIL图像并复制到内存中，这样可以安全关闭原始缓冲区
             img = Image.open(buf).copy()
-
-            return img, None
+            return img
         else:
             # 创建一个带有文本的图像，提示用户没有生成图像
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -98,7 +135,7 @@ if chinese_font:
             plt.savefig(buf, format='png')
             buf.seek(0)
             img = Image.open(buf).copy()
-            return img, None
+            return img
     
     except Exception as e:
         # 创建一个带有错误信息的图像
@@ -109,30 +146,11 @@ if chinese_font:
         plt.savefig(buf, format='png')
         buf.seek(0)
         img = Image.open(buf).copy()
-        return img, None
+        return img
     
     finally:
         # 关闭缓冲区
         buf.close()
-
-# 修改默认代码
-default_code = '''import matplotlib.pyplot as plt
-import numpy as np
-import matplotlib.font_manager as fm
-
-# 生成数据
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-
-# 创建图表
-plt.figure(figsize=(10, 6))
-plt.plot(x, y, 'b-', linewidth=2)
-
-# 设置标题和标签
-plt.title('正弦波')
-plt.xlabel('x')
-plt.ylabel('sin(x)')
-plt.grid(True)'''
 
 # 创建Gradio界面
 with gr.Blocks(title="Deepplot: Python 代码可视化工具", theme=gr.themes.Base()) as demo:
@@ -144,72 +162,22 @@ with gr.Blocks(title="Deepplot: Python 代码可视化工具", theme=gr.themes.B
             code_input = gr.Code(
                 label="Python代码", 
                 language="python",
-                value=default_code,
+                value=EXAMPLES[0][0],
                 lines=20
             )
             run_button = gr.Button("执行代码", variant="primary")
     
         with gr.Column(scale=1):
             image_output = gr.Image(label="生成的图像", type="pil")
-            file_output = gr.File(label="下载图片", visible=False)
-    
-    # 执行代码按钮事件
-    def process_code(code):
-        img, _ = execute_python_code(code)
-        # 始终隐藏下载链接
-        return img, gr.update(visible=False)
-    
+
     run_button.click(
-        fn=process_code,
+        fn=execute_python_code,
         inputs=[code_input],
-        outputs=[image_output, file_output]
+        outputs=[image_output]
     )
     
     gr.Examples(
-        [
-            ['''import matplotlib.pyplot as plt
-import numpy as np
-
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-
-plt.figure(figsize=(10, 6))
-plt.plot(x, y, 'b-', linewidth=2)
-plt.title('正弦波')
-plt.xlabel('x')
-plt.ylabel('sin(x)')
-plt.grid(True)'''],
-            ['''import matplotlib.pyplot as plt
-import numpy as np
-
-# 创建数据
-categories = ['A', 'B', 'C', 'D', 'E']
-values = [22, 35, 14, 28, 19]
-
-# 创建柱状图
-plt.figure(figsize=(10, 6))
-plt.bar(categories, values, color='skyblue')
-plt.title('简单柱状图')
-plt.xlabel('类别')
-plt.ylabel('数值')
-plt.grid(True, axis='y', linestyle='--', alpha=0.7)'''],
-            
-            ['''import matplotlib.pyplot as plt
-import numpy as np
-
-# 创建数据
-labels = ['苹果', '香蕉', '橙子', '葡萄', '西瓜']
-sizes = [25, 20, 15, 30, 10]
-colors = ['#ff9999', '#66b3ff', '#99ff99', '#ffcc99', '#c2c2f0']
-explode = (0.1, 0, 0, 0, 0)  # 突出第一个切片
-
-# 创建饼图
-plt.figure(figsize=(10, 8))
-plt.pie(sizes, explode=explode, labels=labels, colors=colors,
-        autopct='%1.1f%%', shadow=True, startangle=90)
-plt.axis('equal')  # 确保饼图是圆的
-plt.title('水果比例')''']
-        ],
+        examples=EXAMPLES,
         inputs=[code_input],
         label="示例代码"
     )
