@@ -15,7 +15,7 @@ WORKDIR /app
 
 COPY ./requirements.txt /app/requirements.txt
 
-RUN pip install -r requirements.txt -i https://pypi.mirrors.ustc.edu.cn/simple
+RUN pip install -r requirements.txt
 
 COPY ./ /app/
 
