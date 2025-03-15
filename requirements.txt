@@ -1,10 +1,7 @@
-gradio==4.44.1
-matplotlib==3.9.4
-pillow==10.4.0
-seaborn==0.13.2
-geopandas==1.0.1
-pypalettes==0.1.4
-highlight_text==0.2
-pyfonts==0.0.2
-drawarrow==0.0.3
-pywaffle==1.1.1
+openai~=1.66.3
+openai-agents~=0.0.4
+gradio~=5.20.1
+matplotlib~=3.7.2
+seaborn~=0.13.2
+pandas~=2.2.3
+pillow~=11.1.0
