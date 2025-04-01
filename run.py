@@ -9,6 +9,12 @@ from openai.types.responses import ResponseTextDeltaEvent
 from agents import Agent, Runner
 import gradio as gr
 import matplotlib
+import tiktoken
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores import Chroma
+from langchain.document_loaders import DirectoryLoader
+import xml.etree.ElementTree as ET
 
 # 设置 Matplotlib 使用 Agg 后端，避免 GUI 警告
 matplotlib.use('Agg')
@@ -85,19 +91,98 @@ visualization_agent = Agent(
     name="数据可视化专家",
     instructions="""你是一个专业的数据可视化助手，专长于使用 Python 的 matplotlib 和 seaborn 库创建图表和可视化。
 
-1. 分析用户的可视化需求，生成清晰易懂的 Python 代码。
-2. 总是使用英文标点符号，不使用中文标点符号。
-3. 代码必须符合 Python 语法，确保能够正确执行。
-4. 不要在代码中包含 plt.show() 调用，因为图像会自动保存和显示。
-5. 当可能时，包含示例数据以创建有意义的可视化。
-6. 为图表添加合适的标题、标签和图例，美化视觉效果，调整字体大小和颜色，使视觉效果更好。
-7. 代码应该包含必要的注释，解释关键步骤。
-8. 确保使用适合数据类型的图表类型。
-9. 回复时，首先简短解释你的实现方案，然后提供代码。
-10. 如果用户要求改进图表，请参考之前的对话和代码，进行有针对性的改进。
+    1. 分析用户的可视化需求，生成清晰易懂的 Python 代码。
+    2. 总是使用英文标点符号，不使用中文标点符号。
+    3. 代码必须符合 Python 语法，确保能够正确执行。
+    4. 不要在代码中包含 plt.show() 调用，因为图像会自动保存和显示。
+    5. 当可能时，包含示例数据以创建有意义的可视化。
+    6. 为图表添加合适的标题、标签和图例，美化视觉效果，调整字体大小和颜色，使视觉效果更好。
+    7. 代码应该包含必要的注释，解释关键步骤。
+    8. 确保使用适合数据类型的图表类型。
+    9. 回复时，首先简短解释你的实现方案，然后提供代码。
+    10. 如果用户要求改进图表，请参考之前的对话和代码，进行有针对性的改进。
 
-始终以代码块格式回复，使用 ```python 和 ``` 标记代码。
-""",
+    始终以代码块格式回复，使用 ```python 和 ``` 标记代码。
+    """,
+    model="gpt-4o",
+)
+
+
+class RAGAgent(Agent):
+    def __init__(self, name, instructions, model, data_path="drawio-diagrams"):
+        super().__init__(name=name, instructions=instructions, model=model)
+        self.embeddings = OpenAIEmbeddings()
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            length_function=self.tiktoken_len
+        )
+        self.vectorstore = self.init_vectorstore(data_path)
+
+    def tiktoken_len(self, text):
+        """计算文本token长度"""
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+
+    def init_vectorstore(self, data_path):
+        """初始化向量数据库"""
+        loader = DirectoryLoader(
+            data_path,
+            glob="**/*.drawio",
+            loader_cls=self.parse_drawio
+        )
+        documents = loader.load()
+        docs = self.text_splitter.split_documents(documents)
+        return Chroma.from_documents(
+            documents=docs,
+            embedding=self.embeddings,
+            persist_directory="./chroma_db"
+        )
+
+    @staticmethod
+    def parse_drawio(file_path):
+        """解析DrawIO文件内容"""
+        try:
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+            content = []
+            # 提取所有文本内容和形状属性
+            for elem in root.iter():
+                if elem.text and elem.text.strip():
+                    content.append(elem.text.strip())
+                if 'value' in elem.attrib:
+                    content.append(elem.attrib['value'])
+            return "\n".join(content)
+        except ET.ParseError as e:
+            print(f"解析错误 {file_path}: {str(e)}")
+            return ""
+
+    async def search(self, query, k=3):
+        """执行相似性检索"""
+        return self.vectorstore.similarity_search(query, k=k)
+
+
+# 创建流程图检索专家代理
+rag_agent = RAGAgent(
+    name="流程图绘制专家",
+    instructions="""你是一个专业的流程图绘制专家，专门负责处理和创建 DrawIO 格式的流程图。
+
+    1. 首先理解用户的检索需求，使用语义相似度搜索找到相关的流程图内容。
+    2. 分析检索到的流程图内容，提取关键元素和结构关系。
+    3. 根据分析结果，生成新的DrawIO格式流程图XML代码。
+    4. 总是使用英文标点符号，不使用中文标点符号。
+    5. 对于检索结果，提供简洁的解释说明其如何影响新流程图的生成。
+    6. 生成的DrawIO代码必须符合标准格式，包含必要的形状、连接线和文本。
+    7. 如果检索结果不够理想，提供改进搜索关键词的建议或询问更多细节。
+    8. 保持专业和客观的语气。
+    9. 在回复中，先展示检索到的相关内容，然后提供生成的DrawIO代码。
+    10. 对生成的流程图进行简要说明，解释关键设计决策。
+
+    回复格式：
+    - 首先说明搜索策略和检索结果
+    - 然后展示生成的DrawIO代码
+    - 最后解释流程图设计思路
+    """,
     model="gpt-4o",
 )
 
@@ -363,6 +448,11 @@ with gr.Blocks(title="Deeplot", theme="soft") as app:
         with gr.Column(scale=1):
             with gr.Tab("图表"):
                 plot_output = gr.Image(label="生成的图表", type="pil")
+            with gr.Tab("流程图检索"):
+                search_input = gr.Textbox(label="输入检索关键词", placeholder="例如：网络架构 或 用户流程图")
+                search_btn = gr.Button("检索", variant="primary")
+                search_results = gr.JSON(label="检索结果")
+
             with gr.Tab("代码"):
                 code_output = gr.Code(language="python", label="生成的代码", interactive=True)
                 execute_btn = gr.Button("执行代码", variant="secondary")
@@ -400,6 +490,13 @@ with gr.Blocks(title="Deeplot", theme="soft") as app:
         fn=lambda: "",
         inputs=[],
         outputs=[user_input]  # 清空输入框
+    )
+
+    # 添加检索功能
+    search_btn.click(
+        fn=lambda q: asyncio.run(Runner.run(rag_agent, f"请搜索与以下关键词相关的流程图内容：{q}")),
+        inputs=[search_input],
+        outputs=[search_results]
     )
 
     # 保留清空对话和执行代码按钮的原逻辑
