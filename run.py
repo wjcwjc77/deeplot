@@ -3,17 +3,18 @@ import re
 from PIL import Image
 import logging
 import asyncio
-from typing import AsyncGenerator
+from typing import AsyncGenerator,List,Iterable
 from openai.types.responses import ResponseTextDeltaEvent
 
 from agents import Agent, Runner
 import gradio as gr
 import matplotlib
 import tiktoken
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import Chroma
-from langchain.document_loaders import DirectoryLoader
+from langchain_community.vectorstores import Chroma
+from langchain.schema import Document
+from langchain_community.document_loaders import DirectoryLoader
 import xml.etree.ElementTree as ET
 
 # 设置 Matplotlib 使用 Agg 后端，避免 GUI 警告
@@ -104,62 +105,74 @@ visualization_agent = Agent(
 
     始终以代码块格式回复，使用 ```python 和 ``` 标记代码。
     """,
-    model="gpt-4o",
+    model="ep-20250205113409-kwbtt",
 )
 
 
 class RAGAgent(Agent):
-    def __init__(self, name, instructions, model, data_path="drawio-diagrams"):
+    def __init__(self, name, instructions, model, file_path="mxfile_report.txt"):
         super().__init__(name=name, instructions=instructions, model=model)
-        self.embeddings = OpenAIEmbeddings()
+        self.embeddings = OpenAIEmbeddings(
+            model="text-embedding-3-small",
+            chunk_size=256,  # 限制每次处理的文本块大小
+            max_retries=3  
+        )
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
-            chunk_overlap=200,
+            chunk_overlap=100,
+            separators=["\n\n"],
             length_function=self.tiktoken_len
         )
-        self.vectorstore = self.init_vectorstore(data_path)
+        self.vectorstore = self.init_vectorstore(file_path)
 
     def tiktoken_len(self, text):
         """计算文本token长度"""
         enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))
 
-    def init_vectorstore(self, data_path):
+    def init_vectorstore(self, file_path):
         """初始化向量数据库"""
-        loader = DirectoryLoader(
-            data_path,
-            glob="**/*.drawio",
-            loader_cls=self.parse_drawio
-        )
-        documents = loader.load()
-        docs = self.text_splitter.split_documents(documents)
-        return Chroma.from_documents(
-            documents=docs,
-            embedding=self.embeddings,
-            persist_directory="./chroma_db"
-        )
-
-    @staticmethod
-    def parse_drawio(file_path):
-        """解析DrawIO文件内容"""
+        
         try:
-            tree = ET.parse(file_path)
-            root = tree.getroot()
-            content = []
-            # 提取所有文本内容和形状属性
-            for elem in root.iter():
-                if elem.text and elem.text.strip():
-                    content.append(elem.text.strip())
-                if 'value' in elem.attrib:
-                    content.append(elem.attrib['value'])
-            return "\n".join(content)
-        except ET.ParseError as e:
-            print(f"解析错误 {file_path}: {str(e)}")
-            return ""
+            # 直接加载单个文件
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # 按两个换行符分割内容
+                chunks = [chunk.strip() for chunk in content.split('\n\n') if chunk.strip()]
+                documents = [Document(page_content=chunk) for chunk in chunks]
+            
+            logger.info(f"已加载 {len(documents)} 个文本块")
+            docs = self.text_splitter.split_documents(documents)
+            logger.info(f"最终分割为 {len(docs)} 个文本块")
+            
+            return Chroma.from_documents(
+                documents=docs,
+                embedding=self.embeddings,
+                persist_directory="./chroma_db"
+            )
+        except Exception as e:
+            logger.error(f"初始化向量存储失败: {str(e)}")
+            raise
+
 
     async def search(self, query, k=3):
         """执行相似性检索"""
-        return self.vectorstore.similarity_search(query, k=k)
+        try:
+            # 添加查询预处理
+            query = query.strip()
+            if not query:
+                raise ValueError("查询内容不能为空")
+                
+            logger.info(f"执行搜索: {query}")
+            results = self.vectorstore.similarity_search(query, k=k)
+            
+            # 添加结果日志
+            logger.info(f"找到 {len(results)} 个结果")
+            return results
+            
+        except Exception as e:
+            logger.error(f"搜索失败: {str(e)}")
+            return []
 
 
 # 创建流程图检索专家代理
@@ -183,7 +196,7 @@ rag_agent = RAGAgent(
     - 然后展示生成的DrawIO代码
     - 最后解释流程图设计思路
     """,
-    model="gpt-4o",
+    model="ep-20250205113409-kwbtt",
 )
 
 
@@ -511,4 +524,4 @@ with gr.Blocks(title="Deeplot", theme="soft") as app:
 if __name__ == "__main__":
     # 先配置队列，再启动应用
     app.queue()
-    app.launch(server_name="0.0.0.0", server_port=7860)
+    app.launch(server_name="127.0.0.1", server_port=7860, share=False,auth=None,prevent_thread_lock=False)
