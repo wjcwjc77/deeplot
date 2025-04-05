@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 def is_valid_mxfile(content):
     """验证内容是否是有效的mxfile格式"""
@@ -19,18 +20,21 @@ def read_mxfile(file_path):
     except Exception as e:
         return f"[读取错误] {str(e)}: {file_path}"
 
-def generate_mxfile_report(root_dir):
-    """生成mxfile格式文件报告（包含.drawio和.xml）"""
-    report = []
+def export_mxfile_to_lib(root_dir):
+    """将mxfile文件导出到lib目录，每个文件单独保存"""
     valid_extensions = ('.drawio', '.xml')
+    lib_dir = os.path.join(root_dir, 'lib')
+    
+    # 创建lib目录
+    Path(lib_dir).mkdir(parents=True, exist_ok=True)
+    
+    exported_files = []
     
     for dirpath, _, filenames in os.walk(root_dir):
-        rel_dir = os.path.relpath(dirpath, start=root_dir)
-        if rel_dir == ".":
+        # 跳过lib目录本身
+        if os.path.normpath(dirpath) == os.path.normpath(lib_dir):
             continue
             
-        dir_files = []
-        
         for filename in sorted(f for f in filenames if f.lower().endswith(valid_extensions)):
             file_path = os.path.join(dirpath, filename)
             content = read_mxfile(file_path)
@@ -38,35 +42,31 @@ def generate_mxfile_report(root_dir):
             if content is None:  # 跳过不符合格式的文件
                 continue
                 
-            dir_files.append((filename, content))
-        
-        if dir_files:  # 只显示有有效文件的目录
-            report.append(f"\n目录名称: {rel_dir}")
-            for filename, content in dir_files:
-                report.append(f"\n文件名: {filename}")
-                report.append("文件内容:")
-                report.append(content)
+            # 生成新的txt文件名
+            base_name = os.path.splitext(filename)[0]
+            txt_filename = f"{base_name}.txt"
+            txt_path = os.path.join(lib_dir, txt_filename)
+            
+            try:
+                with open(txt_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                exported_files.append(txt_path)
+            except IOError as e:
+                print(f"保存文件 {txt_path} 时出错: {str(e)}")
     
-    return "\n".join(report) if report else "未找到有效的mxfile格式文件"
+    return exported_files
 
 if __name__ == "__main__":
     target_dir = "/Users/bytedance/PycharmProjects/deeplot/drawio-diagrams"
     
-    print("正在扫描mxfile格式文件（.drawio和.xml）...")
-    report = generate_mxfile_report(target_dir)
+    print("正在导出mxfile格式文件（.drawio和.xml）到lib目录...")
+    exported_files = export_mxfile_to_lib(target_dir)
     
-    # 保存报告
-    output_file = "mxfile_report.txt"
-    try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(report)
-        
-        print(f"报告已生成，保存到: {os.path.abspath(output_file)}")
-        print("="*50)
-        print("目录结构示例:")
-        if report:  # 检查report是否为空
-            print("\n".join([line for line in report.split('\n') if line.startswith("目录名称:")][:3]))
-        else:
-            print("无有效目录结构")
-    except IOError as e:
-        print(f"保存报告时出错: {str(e)}")
+    if exported_files:
+        print(f"成功导出 {len(exported_files)} 个文件到 lib 目录:")
+        for file in exported_files[:5]:  # 只显示前5个文件路径
+            print(f"- {file}")
+        if len(exported_files) > 5:
+            print(f"- ...(共 {len(exported_files)} 个文件)")
+    else:
+        print("未找到有效的mxfile格式文件")

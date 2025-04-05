@@ -1,6 +1,14 @@
 #
 drawio-diagrams/
 chroma_db/
+*.log
+lib/
+lib_copy/
+llm_response/
+storage/
+.env
+
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
